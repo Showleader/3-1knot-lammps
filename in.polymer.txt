@@ -1,0 +1,63 @@
+# 定义附加变量
+variable fname string polymer.txt  # 定义变量 fname，类型为 string，值为"polymer.txt"，用于指定输入数据文件名
+variable simname index polymer     # 定义变量 simname，类型为 index，值为"polymer"，用于表示模拟名称
+
+# 单位和边界条件
+units       lj  # 设置单位为 Lennard-Jones 单位 (即原子单位)
+boundary    p p f  # 设置边界条件：周期性边界 (p) 在 x 和 y 方向，不周期性边界 (f) 在 z 方向
+atom_style  angle  # 设置原子样式为 angle，即考虑角度的模型
+log         log.${simname}.txt  # 设置日志文件输出，文件名为 log.polymer.txt (根据 simname 的值)
+read_data   ${fname}  # 读取数据文件 "polymer.txt" 中的原子配置
+
+# 定义组
+group notmovebead id > 180  # 创建名为 "notmovebead" 的组，包含 id 大于 200 的所有原子
+group movebead id <= 180    # 创建名为 "movebead" 的组，包含 id 小于等于 200 的所有原子
+
+# 键合和角度定义
+bond_style    fene  # 使用 FENE (Finite Extensible Nonlinear Elastic) 键合模型，这是一种常见的高分子链模型
+bond_coeff     1 30. 1.5 1.0 1.0  # 设置 FENE 键合的系数，第一个参数为键的类型编号，30.0 是最大拉伸力，1.5 是最大允许长度，1.0 是刚度等
+
+angle_style    harmonic  # 使用谐波角度模型，这是一种常见的角度势模型
+angle_coeff    1 0.5  180.0  # 设置谐波角度模型的系数，表示一个角度势的刚度系数为5.0，角度阈值为 180 度
+
+# 配对相互作用（修改了 lj/cut 的截断距离）
+pair_style     lj/cut 1.1224  # 设置 Lennard-Jones 配对相互作用的截断距离为 2.5（相互作用仅在距离小于 2.5 时有效）
+pair_coeff     1 1 10.0 1.0 1.1224 # 设置原子类型 1 和 1 之间的相互作用系数，10.0 是势能深度，1.0 是零距离的力常数，2.5 是截断距离
+
+special_bonds lj 0.0 1.0 1.0  # 定义特殊的 Lennard-Jones 相互作用，这里设置了 3 个参数，第一项为相互作用常数，后面两项分别是缩放因子
+
+# 邻居参数
+neighbor 1.0 bin  # 使用 bin 方法来寻找原子的邻居，1.0 表示每个原子附近的最大邻居数
+
+# 速度初始化
+velocity  all create 1.0 1111  # 为所有原子初始化速度，目标温度为 1.0，随机种子为 1111，这样每次运行生成的速度一致
+fix		1 all nve/limit 0.05  # 对所有原子应用 NVE 积分法，时间积分时限制最大速度变化为 0.05
+fix		2 all langevin 1.0  1.0 1.0 904297  # 对所有原子应用 Langevin 温控法，温度设为 1.0，阻尼系数为 1.0，随机种子为 904297
+
+# Fixes for walls
+fix 3 all wall/lj126 zhi EDGE 1.0 1.0 1.1224  # 在 z 轴的高端施加壁面作用，使用 lj126 势，设定了参数，2.1224 是壁面与原子之间的截断距离
+fix 4 all wall/lj126 zlo EDGE 1.0 1.0 1.1224  # 在 z 轴的低端施加壁面作用，作用方式与上面类似
+
+# 针对特定组施加修正
+velocity notmovebead set 0 0 0  # 设置 "notmovebead" 组的速度为零，即这些原子不参与运动
+fix 10 notmovebead setforce 0 0 0  # 对 "notmovebead" 组施加零力，意味着这些原子不会受到任何外力
+
+# 向编号在 1 到 160 之间的原子施加微小的向下力
+variable yforce equal 0  # 定义一个变量 yforce，值为 0.01，这表示向上的微小力
+fix 20 movebead addforce 0 v_yforce 0  # 仅向 "movebead" 组中的原子施加微小的向下力，实际效果是基本没有影响
+
+# 热力学设置
+thermo_style custom step temp  # 设置热力学输出样式，仅输出步数和温度信息
+thermo          100000  # 每 100000 步输出一次热力学信息
+timestep        0.01  # 设置模拟的时间步长为 0.001
+
+# 输出命令
+dump 1 movebead xyz 1000 out.xyz  # 每 1000 步输出 "movebead" 组（ID <= 160）的原子坐标到文件 "out.xyz"
+dump d0 all image 1000000 dump.*.ppm type type atom yes adiam 1.5 zoom 1.0 center d 0.5 0.5 0.5  # 每 1000000 步输出一次原子图像，图像格式为 PPM
+dump 2 all custom 500 output.dump id type x y z vx vy vz  # 每 500 步输出原子的 ID、类型、位置、速度等信息到文件 "output.dump"
+
+# 运行模拟
+run 10000000  # 运行 10000000 步模拟
+
+# 最终消息
+print "All done"  # 输出 "All done" 表示模拟结束
